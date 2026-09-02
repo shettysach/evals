@@ -1,24 +1,80 @@
 import json
+from collections import deque
 
 import pytest
 
-from sokoban_eval.env import SokobanEnv
+from sokoban_eval.env import LEVELS, SokobanEnv
 from sokoban_eval.vlm import ACTION_TOOL, Action
 
 
-def test_board_is_an_8_by_8_two_box_two_goal_puzzle() -> None:
+def _minimum_pushes(env: SokobanEnv) -> int | None:
+    """Push-based BFS: walking within a reachable region is free."""
+    directions = ((-1, 0), (1, 0), (0, -1), (0, 1))
+
+    def reachable(player: tuple[int, int], boxes: frozenset[tuple[int, int]]):
+        cells = {player}
+        pending = [player]
+        while pending:
+            x, y = pending.pop()
+            for dx, dy in directions:
+                next_cell = (x + dx, y + dy)
+                if (
+                    next_cell not in cells
+                    and next_cell not in env.walls
+                    and next_cell not in boxes
+                ):
+                    cells.add(next_cell)
+                    pending.append(next_cell)
+        return cells
+
+    start_boxes = frozenset(env.boxes)
+    pending = deque([(env.player, start_boxes, 0)])
+    seen = {(env.player, start_boxes)}
+    while pending:
+        player, boxes, pushes = pending.popleft()
+        if boxes == env.goals:
+            return pushes
+        walkable = reachable(player, boxes)
+        for box_x, box_y in boxes:
+            for dx, dy in directions:
+                required_player = (box_x - dx, box_y - dy)
+                destination = (box_x + dx, box_y + dy)
+                if (
+                    required_player not in walkable
+                    or destination in env.walls
+                    or destination in boxes
+                ):
+                    continue
+                next_boxes = frozenset((boxes - {(box_x, box_y)}) | {destination})
+                state = ((box_x, box_y), next_boxes)
+                if state not in seen:
+                    seen.add(state)
+                    pending.append(((box_x, box_y), next_boxes, pushes + 1))
+    return None
+
+
+def test_levels_are_8_by_8_with_two_or_three_boxes_and_goals() -> None:
+    assert len(LEVELS) == 10
     env = SokobanEnv()
     assert (env.width, env.height) == (8, 8)
-    assert len(env.boxes) == len(env.goals) == 2
+    for level in LEVELS:
+        env.select_level(level.number)
+        assert len(env.boxes) == len(env.goals)
+        assert 2 <= len(env.boxes) <= 3
+
+
+def test_all_shipped_levels_are_solvable() -> None:
+    for level in LEVELS:
+        assert _minimum_pushes(SokobanEnv(level.number)) is not None, level.name
 
 
 def test_box_pushes_only_into_open_cell() -> None:
     env = SokobanEnv()
-    env.player = (2, 4)
+    env.player = (2, 3)
     result = env.move("up")
     assert result.moved and result.pushed
-    assert env.player == (2, 3)
-    assert (2, 2) in env.boxes
+    assert env.player == (2, 2)
+    assert (2, 1) in env.boxes
 
 
 @pytest.mark.parametrize(

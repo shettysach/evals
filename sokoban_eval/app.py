@@ -6,7 +6,7 @@ from io import BytesIO
 
 import pygame
 
-from sokoban_eval.env import SokobanEnv
+from sokoban_eval.env import LEVELS, SokobanEnv
 from sokoban_eval.vlm import OAIChatClient
 
 CELL_SIZE = 88
@@ -16,17 +16,17 @@ DEFAULT_VLM_URL = "http://127.0.0.1:8080"
 
 
 class GameApp:
-    def __init__(self, client: OAIChatClient | None) -> None:
+    def __init__(self, client: OAIChatClient | None, *, level: int = 1) -> None:
         pygame.init()
         pygame.display.set_caption("2D Sokoban VLM Eval")
         self.screen = pygame.display.set_mode(WINDOW_SIZE)
         self.font = pygame.font.Font(None, 25)
         self.small_font = pygame.font.Font(None, 20)
         self.clock = pygame.time.Clock()
-        self.env = SokobanEnv()
+        self.env = SokobanEnv(level)
         self.client = client
         self.last_action: str | None = None
-        self.status = "Arrow keys: play  ·  Space: ask VLM  ·  R: reset"
+        self.status = "Arrows: play · 1–10: level · Space: ask VLM · R: reset"
 
     def run(self) -> None:
         running = True
@@ -56,7 +56,17 @@ class GameApp:
             self.status = "Environment reset."
         elif key == pygame.K_SPACE:
             self._ask_vlm()
+        elif pygame.K_1 <= key <= pygame.K_9:
+            self._select_level(key - pygame.K_0)
+        elif key == pygame.K_0:
+            self._select_level(10)
         return True
+
+    def _select_level(self, number: int) -> None:
+        self.env.select_level(number)
+        self.last_action = None
+        level = self.env.level
+        self.status = f"Level {level.number}: {level.name} ({level.difficulty})"
 
     def _apply_move(self, direction: str) -> None:
         result = self.env.move(direction)
@@ -99,7 +109,12 @@ class GameApp:
     def draw(self) -> None:
         self.screen.fill((23, 29, 39))
         self._draw_board(self.screen, origin_y=HEADER_HEIGHT)
-        title = self.font.render("SOKOBAN · 2 boxes → 2 goals", True, (238, 242, 255))
+        level = self.env.level
+        title = self.font.render(
+            f"SOKOBAN · {level.number}/10 · {level.name} ({level.difficulty})",
+            True,
+            (238, 242, 255),
+        )
         status = self.small_font.render(self.status, True, (193, 204, 224))
         self.screen.blit(title, (14, 10))
         self.screen.blit(status, (14, 42))
@@ -133,5 +148,8 @@ def main() -> None:
     parser.add_argument("--vlm-url", default=DEFAULT_VLM_URL)
     parser.add_argument("--model", default=os.getenv("VLM_MODEL", ""))
     parser.add_argument("--timeout", type=float, default=float(os.getenv("VLM_TIMEOUT", "120")))
+    parser.add_argument("--puzzle", type=int, choices=range(1, len(LEVELS) + 1), default=1)
+    parser.add_argument("--single-player", action="store_true", help="Disable VLM requests; use arrow keys to play.")
     args = parser.parse_args()
-    GameApp(OAIChatClient(args.vlm_url, timeout=args.timeout, model=args.model)).run()
+    client = None if args.single_player else OAIChatClient(args.vlm_url, timeout=args.timeout, model=args.model)
+    GameApp(client, level=args.puzzle).run()

@@ -1,7 +1,7 @@
 # Task: Solve the Sokoban Board
 
 You control the blue circular player in a small grid-based Sokoban puzzle. The
-player must push both brown boxes onto the green goal squares.
+player must push every brown box onto a green goal square.
 
 ## Visual legend
 
@@ -23,8 +23,8 @@ box that cannot be pushed, has no effect.
 
 Plan before pushing: a box pushed against a wall or into a corner that is not a
 goal may become permanently stuck. Work on one box at a time when that avoids
-blocking access to the other. The task succeeds only when both boxes are on
-green goals.
+blocking access to the others. The task succeeds only when every box is on a
+green goal.
 
 ## Response policy
 
