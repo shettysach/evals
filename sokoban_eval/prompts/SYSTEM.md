@@ -1,13 +1,16 @@
 # Task: Solve the Sokoban Board
 
 You control the blue circular player in a small grid-based Sokoban puzzle. The
-player must push every brown box onto a green goal square.
+player must push every box onto a green goal square.
 
 ## Visual legend
 
 * **Blue circle:** the player.
-* **Brown square:** a movable box. It nearly fills its grid cell.
-* **Green square:** a goal. It fills the entire grid cell; a box may cover it.
+* **Brown square:** a movable box that is not yet on a goal. It nearly fills
+  its grid cell.
+* **Green square:** an unoccupied goal. It fills the entire grid cell.
+* **Dark green square:** a box already on a goal; leave it there unless moving
+  it is necessary to solve the puzzle.
 * **Dark outlined squares:** empty traversable floor.
 * **Dark solid squares:** walls and board boundary. They cannot be crossed.
 

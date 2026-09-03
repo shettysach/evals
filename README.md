@@ -2,7 +2,7 @@
 
 An 8×8 visual Sokoban environment intended for tool-using VLM evaluations.
 Each puzzle contains two or three brown boxes, matching full-cell green goals,
-and a large blue player circle. It uses the same OpenAI-compatible
+and a large blue player circle. A box on a goal is dark green. It uses the same OpenAI-compatible
 chat-completions/tool-call pattern as DSRF.
 
 ## Run

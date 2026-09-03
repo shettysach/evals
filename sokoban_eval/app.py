@@ -17,6 +17,10 @@ HEADER_HEIGHT = 74
 WINDOW_SIZE = (SokobanEnv.width * CELL_SIZE, SokobanEnv.height * CELL_SIZE + HEADER_HEIGHT)
 DEFAULT_VLM_URL = "http://127.0.0.1:8080"
 VLMResult: TypeAlias = tuple[int, Completion | Exception]
+BOX_COLOR = (142, 88, 51)
+BOX_OUTLINE_COLOR = (94, 54, 33)
+COMPLETED_BOX_COLOR = (31, 111, 62)
+COMPLETED_BOX_OUTLINE_COLOR = (18, 75, 40)
 
 
 class GameApp:
@@ -186,8 +190,11 @@ class GameApp:
         for x, y in self.env.boxes:
             rect = pygame.Rect(x * CELL_SIZE + inset, origin_y + y * CELL_SIZE + inset,
                                CELL_SIZE - 2 * inset, CELL_SIZE - 2 * inset)
-            pygame.draw.rect(surface, (142, 88, 51), rect, border_radius=5)
-            pygame.draw.rect(surface, (94, 54, 33), rect, 3, border_radius=5)
+            completed = (x, y) in self.env.goals
+            color = COMPLETED_BOX_COLOR if completed else BOX_COLOR
+            outline = COMPLETED_BOX_OUTLINE_COLOR if completed else BOX_OUTLINE_COLOR
+            pygame.draw.rect(surface, color, rect, border_radius=5)
+            pygame.draw.rect(surface, outline, rect, 3, border_radius=5)
         px, py = self.env.player
         center = (px * CELL_SIZE + CELL_SIZE // 2, origin_y + py * CELL_SIZE + CELL_SIZE // 2)
         pygame.draw.circle(surface, (43, 121, 220), center, round(CELL_SIZE * 0.45))
