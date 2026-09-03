@@ -4,7 +4,7 @@ from collections import deque
 import pytest
 
 from sokoban_eval.env import LEVELS, SokobanEnv
-from sokoban_eval.vlm import ACTION_TOOL, Action
+from sokoban_eval.vlm import ACTION_TOOL, Action, OAIChatClient
 
 
 def _minimum_pushes(env: SokobanEnv) -> int | None:
@@ -107,3 +107,42 @@ def test_schema_has_only_the_requested_actions_and_directions() -> None:
     properties = ACTION_TOOL["function"]["parameters"]["properties"]
     assert properties["action"]["enum"] == ["move", "reset"]
     assert properties["direction"]["enum"] == ["left", "right", "up", "down"]
+
+
+def test_vlm_history_replays_prior_user_image_before_tool_acknowledgement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    posted: list[dict[str, object]] = []
+    responses = iter((
+        {"choices": [{"message": {"tool_calls": [{"id": "call_1", "function": {
+            "name": "sokoban_action", "arguments": '{"action":"move","direction":"up"}',
+        }}]}}]},
+        {"choices": [{"message": {"tool_calls": [{"id": "call_2", "function": {
+            "name": "sokoban_action", "arguments": '{"action":"move","direction":"right"}',
+        }}]}}]},
+    ))
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self) -> bytes:
+            return json.dumps(next(responses)).encode()
+
+    def urlopen(request, timeout):
+        posted.append(json.loads(request.data))
+        return Response()
+
+    monkeypatch.setattr("sokoban_eval.vlm.urllib.request.urlopen", urlopen)
+    client = OAIChatClient("http://example.test")
+    first = client.complete(b"first", None)
+    client.commit(first)
+    client.complete(b"second", "move(up)")
+
+    messages = posted[1]["messages"]
+    assert [message["role"] for message in messages] == [
+        "system", "user", "assistant", "tool", "user",
+    ]

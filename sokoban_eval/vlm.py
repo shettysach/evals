@@ -58,6 +58,7 @@ class Action:
 @dataclass(frozen=True)
 class Completion:
     action: Action
+    user_message: dict[str, Any]
     assistant_message: dict[str, Any]
     tool_call_id: str
 
@@ -74,20 +75,13 @@ class OAIChatClient:
     def complete(self, board_png: bytes, last_action: str | None) -> Completion:
         messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
         for completion in self._history:
-            messages.extend((completion.assistant_message, {
+            messages.extend((completion.user_message, completion.assistant_message, {
                 "role": "tool",
                 "tool_call_id": completion.tool_call_id,
                 "content": "Action completed.",
             }))
-        previous = last_action or "none (initial board)"
-        text = f"Completed action: {previous}\n\n{USER_PROMPT}"
-        messages.append({
-            "role": "user",
-            "content": [
-                {"type": "text", "text": text},
-                {"type": "image_url", "image_url": {"url": _png_data_url(board_png)}},
-            ],
-        })
+        user_message = _user_message(board_png, last_action)
+        messages.append(user_message)
         payload = {
             "model": self.model,
             "messages": messages,
@@ -108,7 +102,7 @@ class OAIChatClient:
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace").strip()
             raise RuntimeError(f"VLM HTTP {exc.code}: {detail}") from exc
-        return _completion_from_response(document)
+        return _completion_from_response(document, user_message)
 
     def commit(self, completion: Completion) -> None:
         self._history.append(completion)
@@ -118,7 +112,21 @@ def _png_data_url(png: bytes) -> str:
     return "data:image/png;base64," + b64encode(png).decode("ascii")
 
 
-def _completion_from_response(document: object) -> Completion:
+def _user_message(board_png: bytes, last_action: str | None) -> dict[str, Any]:
+    previous = last_action or "none (initial board)"
+    text = f"Completed action: {previous}\n\n{USER_PROMPT}"
+    return {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": text},
+            {"type": "image_url", "image_url": {"url": _png_data_url(board_png)}},
+        ],
+    }
+
+
+def _completion_from_response(
+    document: object, user_message: dict[str, Any]
+) -> Completion:
     try:
         message = document["choices"][0]["message"]  # type: ignore[index]
         calls = message["tool_calls"]
@@ -140,4 +148,9 @@ def _completion_from_response(document: object) -> Completion:
     assistant_message: dict[str, Any] = {"role": "assistant", "tool_calls": calls}
     if isinstance(message.get("content"), str):
         assistant_message["content"] = message["content"]
-    return Completion(Action.from_arguments(function["arguments"]), assistant_message, tool_id)
+    return Completion(
+        Action.from_arguments(function["arguments"]),
+        user_message,
+        assistant_message,
+        tool_id,
+    )
