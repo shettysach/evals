@@ -3,16 +3,20 @@ from __future__ import annotations
 import argparse
 import os
 from io import BytesIO
+from queue import Empty, Queue
+from threading import Thread
+from typing import TypeAlias
 
 import pygame
 
 from sokoban_eval.env import LEVELS, SokobanEnv
-from sokoban_eval.vlm import OAIChatClient
+from sokoban_eval.vlm import Completion, OAIChatClient
 
 CELL_SIZE = 88
 HEADER_HEIGHT = 74
 WINDOW_SIZE = (SokobanEnv.width * CELL_SIZE, SokobanEnv.height * CELL_SIZE + HEADER_HEIGHT)
 DEFAULT_VLM_URL = "http://127.0.0.1:8080"
+VLMResult: TypeAlias = tuple[int, Completion | Exception]
 
 
 class GameApp:
@@ -33,10 +37,14 @@ class GameApp:
         self.vlm_turns = 0
         self.last_action: str | None = None
         self.status = "Arrows: play · 1–10: level · Space: ask VLM · R: reset"
+        self._vlm_results: Queue[VLMResult] = Queue()
+        self._vlm_request_pending = False
+        self._board_version = 0
 
     def run(self) -> None:
         running = True
         while running:
+            self._poll_vlm_result()
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
@@ -60,6 +68,7 @@ class GameApp:
             self._apply_move(directions[key])
         elif key == pygame.K_r:
             self.env.reset()
+            self._board_version += 1
             self.last_action = "reset"
             self.status = "Environment reset."
         elif key == pygame.K_SPACE:
@@ -72,12 +81,14 @@ class GameApp:
 
     def _select_level(self, number: int) -> None:
         self.env.select_level(number)
+        self._board_version += 1
         self.last_action = None
         level = self.env.level
         self.status = f"Level {level.number}: {level.name} ({level.difficulty})"
 
     def _apply_move(self, direction: str) -> None:
         result = self.env.move(direction)
+        self._board_version += 1
         self.last_action = result.action
         if result.completed:
             self.status = f"Solved in {self.env.steps} moves! Press R to run again."
@@ -90,27 +101,54 @@ class GameApp:
         if self.client is None:
             self.status = "Set VLM_URL to enable VLM actions."
             return
+        if self._vlm_request_pending:
+            return
         self.status = "Requesting VLM action…"
         self.vlm_turns += 1
         print(f"VLM request {self.vlm_turns}", flush=True)
-        self.draw()
-        pygame.display.flip()
+        client = self.client
+        board_png = self.board_png()
+        last_action = self.last_action
+        board_version = self._board_version
+        self._vlm_request_pending = True
+
+        def request_action() -> None:
+            try:
+                self._vlm_results.put((board_version, client.complete(board_png, last_action)))
+            except Exception as exc:
+                self._vlm_results.put((board_version, exc))
+
+        Thread(target=request_action, daemon=True).start()
+
+    def _poll_vlm_result(self) -> None:
+        """Apply a finished VLM request without ever blocking the UI thread."""
         try:
-            completion = self.client.complete(self.board_png(), self.last_action)
-            action = completion.action
-            print(f"VLM action: {action.label()}", flush=True)
-            if action.action == "reset":
-                self.env.reset()
-                self.last_action = action.label()
-                self.status = "VLM: reset"
-            else:
-                self._apply_move(action.direction or "")
-                self.status = "VLM: " + self.status
-            self.client.commit(completion)
-        except Exception as exc:
+            board_version, result = self._vlm_results.get_nowait()
+        except Empty:
+            return
+
+        self._vlm_request_pending = False
+        if board_version != self._board_version:
+            return
+        if isinstance(result, Exception):
             self.client = None
-            print(f"VLM error: {type(exc).__name__}: {exc}", flush=True)
-            self.status = f"VLM error: {type(exc).__name__}: {exc}"
+            print(f"VLM error: {type(result).__name__}: {result}", flush=True)
+            self.status = f"VLM error: {type(result).__name__}: {result}"
+            return
+
+        completion = result
+        action = completion.action
+        print(f"VLM action: {action.label()}", flush=True)
+        if action.action == "reset":
+            self.env.reset()
+            self._board_version += 1
+            self.last_action = action.label()
+            self.status = "VLM: reset"
+        else:
+            self._apply_move(action.direction or "")
+            self.status = "VLM: " + self.status
+        if self.client is not None:
+            self.client.commit(completion)
 
     def board_png(self) -> bytes:
         board = pygame.Surface((SokobanEnv.width * CELL_SIZE, SokobanEnv.height * CELL_SIZE))
