@@ -40,7 +40,7 @@ call. A blank `model` field is used for llama-server compatibility; override it
 with `VLM_MODEL` when needed. `VLM_TIMEOUT` defaults to 120 seconds.
 
 `main.py` defaults to `http://127.0.0.1:8080`; change it only when needed with
-`--vlm-url`. Each VLM turn is requested with Space, so the rendered board and
-every action remain easy to inspect. The full valid action history is replayed as
-`assistant` tool calls followed by `tool` acknowledgements, matching DSRF's
-conversation protocol.
+`--vlm-url`. `--history 0` (the default) sends only the current fully observable
+board. Set `--history N` to replay the last N prior action-text, assistant tool
+call, and tool-acknowledgement turns. Historical board images are intentionally
+not replayed, so every request contains exactly one image.

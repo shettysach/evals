@@ -58,7 +58,7 @@ class Action:
 @dataclass(frozen=True)
 class Completion:
     action: Action
-    user_message: dict[str, Any]
+    history_user_message: dict[str, Any]
     assistant_message: dict[str, Any]
     tool_call_id: str
 
@@ -66,16 +66,27 @@ class Completion:
 class OAIChatClient:
     """DSRF-style OpenAI chat-completions client for one forced action tool."""
 
-    def __init__(self, base_url: str, *, timeout: float = 120.0, model: str = "") -> None:
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        timeout: float = 120.0,
+        model: str = "",
+        history_turns: int = 0,
+    ) -> None:
+        if history_turns < 0:
+            raise ValueError("history_turns must be non-negative")
         self.endpoint = f"{base_url.rstrip('/')}/v1/chat/completions"
         self.timeout = timeout
         self.model = model
+        self.history_turns = history_turns
         self._history: list[Completion] = []
 
     def complete(self, board_png: bytes, last_action: str | None) -> Completion:
         messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
-        for completion in self._history:
-            messages.extend((completion.user_message, completion.assistant_message, {
+        history = self._history[-self.history_turns:] if self.history_turns else ()
+        for completion in history:
+            messages.extend((completion.history_user_message, completion.assistant_message, {
                 "role": "tool",
                 "tool_call_id": completion.tool_call_id,
                 "content": "Action completed.",
@@ -102,10 +113,11 @@ class OAIChatClient:
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace").strip()
             raise RuntimeError(f"VLM HTTP {exc.code}: {detail}") from exc
-        return _completion_from_response(document, user_message)
+        return _completion_from_response(document, _history_user_message(last_action))
 
     def commit(self, completion: Completion) -> None:
-        self._history.append(completion)
+        if self.history_turns:
+            self._history.append(completion)
 
 
 def _png_data_url(png: bytes) -> str:
@@ -113,8 +125,7 @@ def _png_data_url(png: bytes) -> str:
 
 
 def _user_message(board_png: bytes, last_action: str | None) -> dict[str, Any]:
-    previous = last_action or "none (initial board)"
-    text = f"Completed action: {previous}\n\n{USER_PROMPT}"
+    text = _user_text(last_action)
     return {
         "role": "user",
         "content": [
@@ -124,8 +135,18 @@ def _user_message(board_png: bytes, last_action: str | None) -> dict[str, Any]:
     }
 
 
+def _history_user_message(last_action: str | None) -> dict[str, Any]:
+    """A completed turn keeps its text, never its already-obsolete board image."""
+    return {"role": "user", "content": _user_text(last_action)}
+
+
+def _user_text(last_action: str | None) -> str:
+    previous = last_action or "none (initial board)"
+    return f"Completed action: {previous}\n\n{USER_PROMPT}"
+
+
 def _completion_from_response(
-    document: object, user_message: dict[str, Any]
+    document: object, history_user_message: dict[str, Any]
 ) -> Completion:
     try:
         message = document["choices"][0]["message"]  # type: ignore[index]
@@ -150,7 +171,7 @@ def _completion_from_response(
         assistant_message["content"] = message["content"]
     return Completion(
         Action.from_arguments(function["arguments"]),
-        user_message,
+        history_user_message,
         assistant_message,
         tool_id,
     )

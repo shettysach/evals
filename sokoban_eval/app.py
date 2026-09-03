@@ -163,6 +163,19 @@ def main() -> None:
     parser.add_argument("--timeout", type=float, default=float(os.getenv("VLM_TIMEOUT", "120")))
     parser.add_argument("--puzzle", type=int, choices=range(1, len(LEVELS) + 1), default=1)
     parser.add_argument("--single-player", action="store_true", help="Disable VLM requests; use arrow keys to play.")
+    parser.add_argument(
+        "--history",
+        type=int,
+        default=0,
+        help="Number of completed VLM turns to replay (default: 0).",
+    )
     args = parser.parse_args()
-    client = None if args.single_player else OAIChatClient(args.vlm_url, timeout=args.timeout, model=args.model)
+    if args.history < 0:
+        parser.error("--history must be non-negative")
+    client = None if args.single_player else OAIChatClient(
+        args.vlm_url,
+        timeout=args.timeout,
+        model=args.model,
+        history_turns=args.history,
+    )
     GameApp(client, level=args.puzzle).run()

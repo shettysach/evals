@@ -109,7 +109,7 @@ def test_schema_has_only_the_requested_actions_and_directions() -> None:
     assert properties["direction"]["enum"] == ["left", "right", "up", "down"]
 
 
-def test_vlm_history_replays_prior_user_image_before_tool_acknowledgement(
+def test_vlm_history_replays_prior_text_before_tool_acknowledgement(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     posted: list[dict[str, object]] = []
@@ -137,7 +137,7 @@ def test_vlm_history_replays_prior_user_image_before_tool_acknowledgement(
         return Response()
 
     monkeypatch.setattr("sokoban_eval.vlm.urllib.request.urlopen", urlopen)
-    client = OAIChatClient("http://example.test")
+    client = OAIChatClient("http://example.test", history_turns=1)
     first = client.complete(b"first", None)
     client.commit(first)
     client.complete(b"second", "move(up)")
@@ -146,3 +146,34 @@ def test_vlm_history_replays_prior_user_image_before_tool_acknowledgement(
     assert [message["role"] for message in messages] == [
         "system", "user", "assistant", "tool", "user",
     ]
+    assert isinstance(messages[1]["content"], str)
+    assert "image_url" not in str(messages[1]["content"])
+    assert messages[-1]["content"][1]["type"] == "image_url"
+
+
+def test_zero_history_sends_only_the_current_board(monkeypatch: pytest.MonkeyPatch) -> None:
+    posted: list[dict[str, object]] = []
+    response = {"choices": [{"message": {"tool_calls": [{"id": "call_1", "function": {
+        "name": "sokoban_action", "arguments": '{"action":"reset"}',
+    }}]}}]}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self) -> bytes:
+            return json.dumps(response).encode()
+
+    def urlopen(request, timeout):
+        posted.append(json.loads(request.data))
+        return Response()
+
+    monkeypatch.setattr("sokoban_eval.vlm.urllib.request.urlopen", urlopen)
+    client = OAIChatClient("http://example.test", history_turns=0)
+    client.commit(client.complete(b"first", None))
+    client.complete(b"second", "reset")
+
+    assert [message["role"] for message in posted[1]["messages"]] == ["system", "user"]
