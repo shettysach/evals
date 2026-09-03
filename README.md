@@ -15,7 +15,8 @@ uv run main.py
 Keyboard controls:
 
 - Arrow keys: manually move the player.
-- Space: ask the configured VLM for exactly one action.
+- The VLM automatically requests and executes actions until the puzzle is
+  solved or the server reports an error.
 - R: reset the episode.
 - 1–9: load that puzzle; 0: load puzzle 10.
 - Escape or close window: quit.
@@ -25,6 +26,7 @@ For manual testing without a VLM:
 ```bash
 uv run main.py --single-player --puzzle 1
 ```
+
 
 To enable VLM control, point `VLM_URL` at an OpenAI-compatible server:
 

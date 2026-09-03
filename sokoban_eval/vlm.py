@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import urllib.error
 import urllib.request
 from base64 import b64encode
 from dataclasses import dataclass
@@ -101,8 +102,12 @@ class OAIChatClient:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=self.timeout) as response:
-            document = json.loads(response.read().decode())
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                document = json.loads(response.read().decode())
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace").strip()
+            raise RuntimeError(f"VLM HTTP {exc.code}: {detail}") from exc
         return _completion_from_response(document)
 
     def commit(self, completion: Completion) -> None:

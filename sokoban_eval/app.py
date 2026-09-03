@@ -16,7 +16,12 @@ DEFAULT_VLM_URL = "http://127.0.0.1:8080"
 
 
 class GameApp:
-    def __init__(self, client: OAIChatClient | None, *, level: int = 1) -> None:
+    def __init__(
+        self,
+        client: OAIChatClient | None,
+        *,
+        level: int = 1,
+    ) -> None:
         pygame.init()
         pygame.display.set_caption("2D Sokoban VLM Eval")
         self.screen = pygame.display.set_mode(WINDOW_SIZE)
@@ -25,6 +30,7 @@ class GameApp:
         self.clock = pygame.time.Clock()
         self.env = SokobanEnv(level)
         self.client = client
+        self.vlm_turns = 0
         self.last_action: str | None = None
         self.status = "Arrows: play · 1–10: level · Space: ask VLM · R: reset"
 
@@ -36,6 +42,8 @@ class GameApp:
                     running = False
                 elif event.type == pygame.KEYDOWN:
                     running = self._handle_key(event.key)
+            if self.client is not None and not self.env.completed:
+                self._ask_vlm()
             self.draw()
             pygame.display.flip()
             self.clock.tick(30)
@@ -83,11 +91,14 @@ class GameApp:
             self.status = "Set VLM_URL to enable VLM actions."
             return
         self.status = "Requesting VLM action…"
+        self.vlm_turns += 1
+        print(f"VLM request {self.vlm_turns}", flush=True)
         self.draw()
         pygame.display.flip()
         try:
             completion = self.client.complete(self.board_png(), self.last_action)
             action = completion.action
+            print(f"VLM action: {action.label()}", flush=True)
             if action.action == "reset":
                 self.env.reset()
                 self.last_action = action.label()
@@ -97,6 +108,8 @@ class GameApp:
                 self.status = "VLM: " + self.status
             self.client.commit(completion)
         except Exception as exc:
+            self.client = None
+            print(f"VLM error: {type(exc).__name__}: {exc}", flush=True)
             self.status = f"VLM error: {type(exc).__name__}: {exc}"
 
     def board_png(self) -> bytes:
