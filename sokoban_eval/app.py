@@ -112,8 +112,6 @@ class GameApp:
         if self._vlm_request_pending:
             return
         self.status = "Requesting VLM action…"
-        self.vlm_reasoning = "Waiting for VLM response…"
-        self.vlm_tool = "—"
         self.vlm_turns += 1
         print(f"VLM request {self.vlm_turns}", flush=True)
         client = self.client
@@ -150,7 +148,7 @@ class GameApp:
 
         completion = result
         action = completion.action
-        self.vlm_reasoning = completion.assistant_message.get("content") or "(no reasoning text)"
+        self.vlm_reasoning = completion.reasoning or "(no reasoning text)"
         self.vlm_tool = action.label()
         print(f"VLM action: {action.label()}", flush=True)
         if action.action == "reset":
@@ -190,7 +188,10 @@ class GameApp:
         pygame.draw.rect(self.screen, (31, 38, 51), (panel_x, 0, PANEL_WIDTH, WINDOW_SIZE[1]))
         pygame.draw.line(self.screen, (74, 86, 106), (panel_x, 0), (panel_x, WINDOW_SIZE[1]), 2)
         self.screen.blit(self.font.render("VLM reasoning + tool", True, (238, 242, 255)), (panel_x + 14, 16))
-        self.screen.blit(self.small_font.render(f"Tool: {self.vlm_tool}", True, (125, 220, 153)), (panel_x + 14, 50))
+        tool_text = f"Tool: {self.vlm_tool}"
+        if self._vlm_request_pending:
+            tool_text += "  ·  requesting next action…"
+        self.screen.blit(self.small_font.render(tool_text, True, (125, 220, 153)), (panel_x + 14, 50))
         y = 84
         for line in self._wrap_text(self.vlm_reasoning, PANEL_WIDTH - 28):
             self.screen.blit(self.small_font.render(line, True, (193, 204, 224)), (panel_x + 14, y))

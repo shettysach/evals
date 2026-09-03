@@ -58,6 +58,7 @@ class Action:
 @dataclass(frozen=True)
 class Completion:
     action: Action
+    reasoning: str | None
     history_user_message: dict[str, Any]
     assistant_message: dict[str, Any]
     tool_call_id: str
@@ -169,8 +170,12 @@ def _completion_from_response(
     assistant_message: dict[str, Any] = {"role": "assistant", "tool_calls": calls}
     if isinstance(message.get("content"), str):
         assistant_message["content"] = message["content"]
+    reasoning = message.get("reasoning_content")
+    if not isinstance(reasoning, str):
+        reasoning = message.get("content") if isinstance(message.get("content"), str) else None
     return Completion(
         Action.from_arguments(function["arguments"]),
+        reasoning,
         history_user_message,
         assistant_message,
         tool_id,
